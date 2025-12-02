@@ -32,18 +32,11 @@ with st.sidebar:
     # Compact Profile Selector
     st.markdown("### 👤 Profile")
     
-    # Find existing profiles
-    import glob
-    import os
-    
-    profile_files = glob.glob("bets*.json")
-    profiles = ["Default"]
-    for f in profile_files:
-        if f == "bets.json":
-            continue
-        name = f.replace("bets_", "").replace(".json", "")
-        profiles.append(name)
-    
+    # Find existing profiles using storage backend
+    from storage import get_storage
+    # Use a temporary storage instance to list profiles (defaulting to Default profile to init)
+    temp_storage = get_storage("Default")
+    profiles = temp_storage.list_profiles()
     profiles.append("➕ Create New...")
     
     # Session state for profile
@@ -58,6 +51,7 @@ with st.sidebar:
             if st.button("Create", use_container_width=True):
                 if new_profile_name and new_profile_name not in profiles:
                     st.session_state['current_profile'] = new_profile_name
+                    st.success(f"Created '{new_profile_name}'!")
                     st.rerun()
                 elif new_profile_name in profiles:
                     st.error("Exists")
@@ -276,13 +270,18 @@ with tab_markets:
 
                     st.dataframe(df[display_cols], use_container_width=True, hide_index=True, column_config=column_config)
                     
+                    # Check if already bet on this event
+                    # This check needs to be done per market, not per event.
+                    # The original instruction had `market['id']` which is not defined here.
+                    # We need to iterate through markets to check for existing bets.
+                    for market_item in markets:
+                        existing_bet_for_market = next((b for b in st.session_state['simulator'].bets if b['market_id'] == market_item['id']), None)
+                        if existing_bet_for_market:
+                            st.info(f"✅ You have a position on {existing_bet_for_market['outcome']} (${existing_bet_for_market['amount']}) for market: {existing_bet_for_market['market_question']}")
+                            break # Only show one indicator per event for simplicity, or iterate for each market
+
                     # Betting UI
                     st.markdown("#### 💰 Place a Bet")
-                    c_b1, c_b2, c_b3, c_b4 = st.columns([3, 2, 2, 2])
-                    
-                    with c_b1:
-                        selected_market_q = st.selectbox("Select Market", [d["Market"] for d in market_data], key=f"bet_market_{i}")
-                    
                     # Find selected market data
                     selected_market = next((d for d in market_data if d["Market"] == selected_market_q), None)
                     

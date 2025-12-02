@@ -10,6 +10,9 @@ class StorageBackend:
     def save(self, data: Dict[str, Any]):
         raise NotImplementedError
 
+    def list_profiles(self) -> List[str]:
+        raise NotImplementedError
+
 class JsonStorage(StorageBackend):
     def __init__(self, filepath: str):
         self.filepath = filepath
@@ -29,6 +32,17 @@ class JsonStorage(StorageBackend):
                 json.dump(data, f, indent=2)
         except Exception as e:
             print(f"Error saving JSON: {e}")
+
+    def list_profiles(self) -> List[str]:
+        import glob
+        files = glob.glob("bets*.json")
+        profiles = ["Default"]
+        for f in files:
+            if f == "bets.json":
+                continue
+            name = f.replace("bets_", "").replace(".json", "")
+            profiles.append(name)
+        return sorted(list(set(profiles)))
 
 class SupabaseStorage(StorageBackend):
     def __init__(self, url: str, key: str, profile: str):
@@ -53,6 +67,18 @@ class SupabaseStorage(StorageBackend):
             self.supabase.table("portfolios").upsert(row, on_conflict="name").execute()
         except Exception as e:
             print(f"Error saving to Supabase: {e}")
+
+    def list_profiles(self) -> List[str]:
+        try:
+            response = self.supabase.table("portfolios").select("name").execute()
+            if response.data:
+                profiles = [row['name'] for row in response.data]
+                if "Default" not in profiles:
+                    profiles.append("Default")
+                return sorted(profiles)
+        except Exception as e:
+            print(f"Error listing profiles from Supabase: {e}")
+        return ["Default"]
 
 def get_storage(profile: str = "Default") -> StorageBackend:
     # Check for Supabase credentials
