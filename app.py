@@ -66,12 +66,6 @@ with st.sidebar:
             st.session_state['current_profile'] = selected_profile
             st.rerun()
 
-    # Determine file path
-    if st.session_state['current_profile'] == "Default":
-        bets_file = "bets.json"
-    else:
-        bets_file = f"bets_{st.session_state['current_profile']}.json"
-    
     # Collapsible Settings
     with st.expander("⚙️ Settings", expanded=False):
         api_key = st.text_input("DeepSeek Key", type="password", value=os.getenv("DEEPSEEK_API_KEY", ""))
@@ -81,9 +75,10 @@ with st.sidebar:
         ds_temp = st.slider("Temp", 0.0, 1.5, 1.0)
 
 # Initialize Simulator with selected profile
-if 'simulator' not in st.session_state or st.session_state.get('simulator_file') != bets_file:
-    st.session_state['simulator'] = BettingSimulator(bets_file)
-    st.session_state['simulator_file'] = bets_file
+current_profile = st.session_state['current_profile']
+if 'simulator' not in st.session_state or st.session_state.get('simulator_profile') != current_profile:
+    st.session_state['simulator'] = BettingSimulator(current_profile)
+    st.session_state['simulator_profile'] = current_profile
 
 # Sidebar Balance
 st.sidebar.divider()

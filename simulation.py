@@ -3,36 +3,27 @@ import os
 from datetime import datetime
 from typing import List, Dict, Optional
 
+from storage import get_storage
+
 class BettingSimulator:
-    def __init__(self, data_file: str = "bets.json"):
-        self.data_file = data_file
+    def __init__(self, profile: str = "Default"):
+        self.profile = profile
+        self.storage = get_storage(profile)
         self.balance = 1000.0
         self.bets = []
         self.load_data()
 
     def load_data(self):
-        if os.path.exists(self.data_file):
-            try:
-                with open(self.data_file, 'r') as f:
-                    data = json.load(f)
-                    self.balance = data.get("balance", 1000.0)
-                    self.bets = data.get("bets", [])
-            except Exception as e:
-                print(f"Error loading bets: {e}")
-                self.balance = 1000.0
-                self.bets = []
-        else:
-            self.save_data()
+        data = self.storage.load()
+        self.balance = data.get("balance", 1000.0)
+        self.bets = data.get("bets", [])
 
     def save_data(self):
-        try:
-            with open(self.data_file, 'w') as f:
-                json.dump({
-                    "balance": self.balance,
-                    "bets": self.bets
-                }, f, indent=2)
-        except Exception as e:
-            print(f"Error saving bets: {e}")
+        data = {
+            "balance": self.balance,
+            "bets": self.bets
+        }
+        self.storage.save(data)
 
     def place_bet(self, market_question: str, outcome: str, amount: float, price: float, event_title: str, market_id: str = None):
         if amount > self.balance:
