@@ -277,7 +277,8 @@ with tab_markets:
                     for market_item in markets:
                         existing_bet_for_market = next((b for b in st.session_state['simulator'].bets if b['market_id'] == market_item['id']), None)
                         if existing_bet_for_market:
-                            st.info(f"✅ You have a position on {existing_bet_for_market['outcome']} (${existing_bet_for_market['amount']}) for market: {existing_bet_for_market['market_question']}")
+                            market_q = existing_bet_for_market.get('market_question', existing_bet_for_market.get('market', 'Unknown Market'))
+                            st.info(f"✅ You have a position on {existing_bet_for_market['outcome']} (${existing_bet_for_market['amount']}) for market: {market_q}")
                             break # Only show one indicator per event for simplicity, or iterate for each market
 
                     # Betting UI
