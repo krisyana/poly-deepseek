@@ -1,0 +1,16 @@
+# Environment Variables
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# System
+.DS_Store
+
+# Local Data (Betting History)
+bets.json
+bets_*.json
+
+# Streamlit
+.streamlit/secrets.toml
