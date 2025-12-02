@@ -25,7 +25,7 @@ class BettingSimulator:
         }
         self.storage.save(data)
 
-    def place_bet(self, market_question: str, outcome: str, amount: float, price: float, event_title: str, market_id: str = None):
+    def place_bet(self, market_question: str, outcome: str, amount: float, price: float, event_title: str, market_id: str = None, category: str = "Uncategorized"):
         if amount > self.balance:
             return False, "Insufficient funds"
         
@@ -36,6 +36,7 @@ class BettingSimulator:
             "event": event_title,
             "market": market_question,
             "market_id": market_id,
+            "category": category,
             "outcome": outcome,
             "amount": amount,
             "price": price,
@@ -47,6 +48,13 @@ class BettingSimulator:
         self.bets.append(bet)
         self.save_data()
         return True, "Bet placed successfully"
+
+    def add_funds(self, amount: float):
+        if amount > 0:
+            self.balance += amount
+            self.save_data()
+            return True, f"Added ${amount:.2f} to wallet."
+        return False, "Amount must be positive."
 
     def get_portfolio(self) -> List[Dict]:
         return sorted(self.bets, key=lambda x: x['date'], reverse=True)

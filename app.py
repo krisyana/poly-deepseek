@@ -67,6 +67,27 @@ with st.sidebar:
         st.caption("🤖 AI Model")
         ds_model = st.selectbox("Model", ["deepseek-chat", "deepseek-reasoner"], index=0, label_visibility="collapsed")
         ds_temp = st.slider("Temp", 0.0, 1.5, 1.0)
+        
+        st.divider()
+        if st.button("🛠️ Fix Old Data", help="Assign categories to old 'Uncategorized' bets"):
+            count = 0
+            for bet in st.session_state['simulator'].bets:
+                if bet.get("category") == "Uncategorized" or not bet.get("category"):
+                    # Simple heuristic: guess based on event title
+                    evt = bet.get("event", "").lower()
+                    if "nba" in evt or "basketball" in evt: bet["category"] = "NBA"
+                    elif "nfl" in evt or "football" in evt: bet["category"] = "NFL"
+                    elif "soccer" in evt or "league" in evt: bet["category"] = "Soccer"
+                    elif "trump" in evt or "election" in evt or "senate" in evt: bet["category"] = "Politics"
+                    elif "bitcoin" in evt or "crypto" in evt: bet["category"] = "Crypto"
+                    else: bet["category"] = "General"
+                    count += 1
+            if count > 0:
+                st.session_state['simulator'].save_data()
+                st.success(f"Updated {count} bets!")
+                st.rerun()
+            else:
+                st.info("No bets needed fixing.")
 
 # Initialize Simulator with selected profile
 current_profile = st.session_state['current_profile']
@@ -79,7 +100,93 @@ st.sidebar.divider()
 st.sidebar.markdown(f"### 💰 Wallet: ${st.session_state['simulator'].balance:,.2f}")
 
 # Main Navigation
-tab_markets, tab_portfolio = st.tabs(["📉 Markets", "📂 Portfolio"])
+tab_markets, tab_portfolio, tab_analysis = st.tabs(["📉 Markets", "📂 Portfolio", "📊 Analysis"])
+
+with tab_analysis:
+    st.markdown("## 📊 Analysis & Insights")
+    
+    portfolio = st.session_state['simulator'].get_portfolio()
+    
+    if portfolio:
+        # DeepSeek Portfolio Analysis
+        st.markdown("### 🤖 AI Portfolio Review")
+        if st.button("🧠 Analyze My Portfolio", use_container_width=True):
+            with st.spinner("DeepSeek is analyzing your positions..."):
+                try:
+                    # Construct portfolio summary for AI
+                    summary = "My Current Portfolio:\n"
+                    for b in portfolio:
+                        status = b['status']
+                        if status == 'OPEN':
+                            summary += f"- OPEN: Bet on '{b['outcome']}' for '{b['market']}' (Event: {b['event']}). Amount: ${b['amount']}. Entry Price: {b['price']}\n"
+                        else:
+                            summary += f"- {status}: Bet on '{b['outcome']}' for '{b['market']}'. PnL: {b.get('return', 0)}\n"
+                    
+                    # Call DeepSeek
+                    client = DeepSeekClient(api_key=api_key)
+                    messages = [
+                        {"role": "system", "content": "You are a sharp betting analyst. Review the user's portfolio and provide insights, risk assessment, and suggestions. Be concise and actionable."},
+                        {"role": "user", "content": summary}
+                    ]
+                    response = client.chat_completion(messages, model=ds_model, temperature=ds_temp)
+                    analysis_text = response['choices'][0]['message']['content']
+                    st.session_state['portfolio_analysis'] = analysis_text
+                except Exception as e:
+                    st.error(f"Analysis failed: {e}")
+        
+        if 'portfolio_analysis' in st.session_state:
+            st.info(st.session_state['portfolio_analysis'])
+        
+        st.divider()
+
+        # Visuals
+        st.markdown("### 📈 Performance Visuals")
+        
+        # Convert to DataFrame for analysis
+        import pandas as pd
+        df_all = pd.DataFrame(portfolio)
+        
+        # Ensure date column is datetime
+        df_all['date'] = pd.to_datetime(df_all['date'])
+        
+        # 1. Cumulative PnL Over Time
+        df_closed = df_all[df_all['status'] != 'OPEN'].copy()
+        if not df_closed.empty:
+            df_closed['realized_pnl'] = df_closed.apply(lambda x: x['potential_payout'] - x['amount'] if x['status'] == 'WON' else -x['amount'], axis=1)
+            df_closed = df_closed.sort_values('date')
+            df_closed['cumulative_pnl'] = df_closed['realized_pnl'].cumsum()
+            
+            st.markdown("#### 💸 Realized PnL History")
+            st.line_chart(df_closed.set_index('date')['cumulative_pnl'])
+        else:
+            st.caption("No closed bets to show PnL history.")
+        
+        # 2. Breakdown Charts
+        c1, c2, c3 = st.columns(3)
+        
+        with c1:
+            st.markdown("#### 🥧 Allocation by Event")
+            allocation = df_all.groupby('event')['amount'].sum()
+            st.bar_chart(allocation)
+            
+        with c2:
+            st.markdown("#### 🏷️ Allocation by Category")
+            # Handle missing category
+            if 'category' not in df_all.columns:
+                df_all['category'] = "Uncategorized"
+            else:
+                df_all['category'] = df_all['category'].fillna("Uncategorized")
+                
+            cat_allocation = df_all.groupby('category')['amount'].sum()
+            st.bar_chart(cat_allocation)
+            
+        with c3:
+            st.markdown("#### ⏱️ Activity by Date")
+            bets_by_date = df_all.groupby(df_all['date'].dt.date)['amount'].count()
+            st.bar_chart(bets_by_date)
+            
+    else:
+        st.info("Place some bets to see analysis!")
 
 with tab_markets:
     # Removed "Science" as requested
@@ -283,45 +390,62 @@ with tab_markets:
 
                     # Betting UI
                     st.markdown("#### 💰 Place a Bet")
-                    # Find selected market data
-                    selected_market = next((d for d in market_data if d["Market"] == selected_market_q), None)
                     
-                    if selected_market:
-                        outcomes_list = []
-                        if "Yes" in selected_market:
-                            outcomes_list = ["Yes", "No"]
-                        else:
-                            # Parse outcomes string back to list? Or just use raw if available
-                            # Simplified: just support Yes/No for now or generic input
-                            outcomes_list = ["Yes", "No"] # Fallback
-                        
-                        with c_b2:
-                            selected_outcome = st.selectbox("Outcome", outcomes_list, key=f"bet_outcome_{i}")
-                        
-                        with c_b3:
-                            bet_amount = st.number_input("Amount ($)", min_value=1.0, value=10.0, step=1.0, key=f"bet_amount_{i}")
-                        
-                        with c_b4:
-                            # Determine price
-                            price = 0.5
-                            # Try to get specific price for outcome
-                            if selected_market.get(f"_{selected_outcome.lower()}_price"):
-                                price = selected_market.get(f"_{selected_outcome.lower()}_price")
+                    # Iterate through all markets in this event
+                    for market in market_data:
+                        with st.expander(f"Bet on: {market['Market']}", expanded=True):
+                            c_b1, c_b2, c_b3 = st.columns([2, 2, 2])
                             
-                            if st.button(f"Bet @ {price*100:.1f}¢", key=f"place_bet_{i}"):
-                                success, msg = st.session_state['simulator'].place_bet(
-                                    market_question=selected_market_q,
+                            outcomes_list = []
+                            if "Yes" in market:
+                                outcomes_list = ["Yes", "No"]
+                            else:
+                                outcomes_list = ["Yes", "No"] # Fallback
+                            
+                            with c_b1:
+                                selected_outcome = st.selectbox("Outcome", outcomes_list, key=f"bet_outcome_{market['_id']}")
+                            
+                            with c_b2:
+                                bet_amount = st.number_input("Amount ($)", min_value=1.0, value=10.0, step=5.0, key=f"bet_amount_{market['_id']}")
+                            
+                            with c_b3:
+                                # Find price for selected outcome
+                                price = 0.5
+                                if selected_outcome == "Yes" and "_yes_price" in market:
+                                    price = market["_yes_price"]
+                                elif selected_outcome == "No" and "_no_price" in market:
+                                    price = market["_no_price"]
+                                
+                                st.metric("Price", f"{price*100:.1f}¢")
+                            
+                            if st.button(f"Place Bet (${bet_amount})", key=f"btn_place_{market['_id']}"):
+                                # Determine Category from Event Tags
+                                # Fallback to sidebar category if no tags found
+                                bet_category = category
+                                if event.get("tags"):
+                                    tags = event.get("tags")
+                                    if isinstance(tags, list) and len(tags) > 0:
+                                        first_tag = tags[0]
+                                        if isinstance(first_tag, dict):
+                                            bet_category = first_tag.get("label", category)
+
+                                result = st.session_state['simulator'].place_bet(
+                                    market_question=market["Market"],
                                     outcome=selected_outcome,
                                     amount=bet_amount,
                                     price=price,
-                                    event_title=title,
-                                    market_id=selected_market.get("_id")
+
+                                    event_title=event["title"],
+                                    market_id=market["_id"],
+                                    category=bet_category # Pass extracted category
                                 )
-                                if success:
-                                    st.success(msg)
+                                if result["success"]:
+                                    st.success(f"Bet placed! New Balance: ${result['new_balance']:.2f}")
                                     st.rerun()
                                 else:
-                                    st.error(msg)
+                                    st.error(result["message"])
+                        
+
             
                 # Analysis Section
                 st.divider()
@@ -426,13 +550,23 @@ with tab_markets:
                                                 # Use recommended_amount from the bet, or a default
                                                 recommended_amount = bet.get('recommended_amount', 10.0) 
 
+                                                # Determine Category from Event Tags
+                                                bet_category = category
+                                                if event.get("tags"):
+                                                    tags = event.get("tags")
+                                                    if isinstance(tags, list) and len(tags) > 0:
+                                                        first_tag = tags[0]
+                                                        if isinstance(first_tag, dict):
+                                                            bet_category = first_tag.get("label", category)
+
                                                 success, msg = st.session_state['simulator'].place_bet(
                                                     market_question=matched_market.get("question"),
                                                     outcome=target_outcome,
                                                     amount=recommended_amount,
                                                     price=price,
                                                     event_title=title,
-                                                    market_id=matched_market.get("id")
+                                                    market_id=matched_market.get("id"),
+                                                    category=bet_category
                                                 )
                                                 if success:
                                                     st.success(f"Bet placed! ({msg})")
@@ -463,6 +597,22 @@ with tab_portfolio:
                     st.info("Prices updated.")
                 st.rerun()
     
+    # Manage Funds
+    with st.expander("💸 Manage Funds", expanded=False):
+        c_fund1, c_fund2 = st.columns([3, 1])
+        with c_fund1:
+            fund_amount = st.number_input("Amount to Deposit ($)", min_value=10.0, step=10.0, value=100.0)
+        with c_fund2:
+            st.write("") # Spacer
+            st.write("") # Spacer
+            if st.button("Deposit", use_container_width=True):
+                success, msg = st.session_state['simulator'].add_funds(fund_amount)
+                if success:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
+
     portfolio = st.session_state['simulator'].get_portfolio()
     
     if portfolio:
@@ -539,30 +689,33 @@ with tab_portfolio:
         else:
             st.info("No active bets.")
 
+
+
         # History Table (Compact)
         st.markdown("### 📜 History")
         history_bets = [b for b in portfolio if b['status'] != 'OPEN']
         if history_bets:
-            import pandas as pd
             df_hist = pd.DataFrame(history_bets)
-            df_hist['date'] = df_hist['date'].apply(lambda x: x[:10])
+            df_hist['date'] = pd.to_datetime(df_hist['date']).dt.strftime('%Y-%m-%d %H:%M')
             df_hist['return'] = df_hist.apply(lambda x: x['potential_payout'] - x['amount'] if x['status'] == 'WON' else -x['amount'], axis=1)
             
             st.dataframe(
-                df_hist[['date', 'event', 'outcome', 'amount', 'return', 'status']],
+                df_hist[['date', 'category', 'event', 'market', 'outcome', 'amount', 'return', 'status']],
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "date": "Date",
-                    "event": "Event",
-                    "outcome": "Pick",
+                    "date": st.column_config.TextColumn("Date"),
+                    "category": st.column_config.TextColumn("Category"),
+                    "event": st.column_config.TextColumn("Event"),
+                    "market": st.column_config.TextColumn("Market"),
+                    "outcome": st.column_config.TextColumn("Pick"),
                     "amount": st.column_config.NumberColumn("Bet", format="$%.2f"),
                     "return": st.column_config.NumberColumn("PnL", format="$%.2f"),
-                    "status": "Result"
+                    "status": st.column_config.TextColumn("Status"),
                 }
             )
         else:
-            st.caption("No history yet.")
+            st.info("No closed bets yet.")
             
     else:
         st.info("No bets placed yet.")
